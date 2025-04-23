@@ -20,8 +20,10 @@ contract VaultSwap is EIP712 {
         uint256 nftId;
         uint256 nonceA;
         uint256 nonceB;
+        bool isExecuted;
     }
-
+    mapping(uint256 => SwapRequest) public swapRequests;
+    
     mapping(address => uint256) public nonces;
 
     bytes32 private constant SWAP_REQUEST_TYPEHASH = keccak256(
@@ -43,6 +45,7 @@ contract VaultSwap is EIP712 {
         bytes memory signatureA,
         bytes memory signatureB
     ) external {
+        require(swapRequests[request.idRequest].isExecuted == false, "Request already executed");
         require(
             request.nonceA == nonces[request.userA],
             "Invalid nonce for userA"
@@ -60,6 +63,18 @@ contract VaultSwap is EIP712 {
             "Invalid signature from User B"
         );
 
+        swapRequests[request.idRequest] = SwapRequest(
+            request.idRequest,
+            request.userA,
+            request.userB,
+            request.tokenContract,
+            request.nftContract,
+            request.tokenAmount,
+            request.nftId,
+            request.nonceA,
+            request.nonceB,
+            true
+        );
         nonces[request.userA]++;
         nonces[request.userB]++;
 

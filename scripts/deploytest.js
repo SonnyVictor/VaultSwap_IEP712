@@ -1,101 +1,78 @@
 const { ethers } = require("hardhat");
-const tokenAbi = [
-    "function balanceOf(address owner) view returns (uint256)",
-    "function approve(address spender, uint256 amount) returns (bool)",
-    "function mint() returns (bool)",
-];
-const nftAbi = [
-    "function ownerOf(uint256 tokenId) view returns (address)",
-    "function approve(address to, uint256 tokenId)",
-    "function safeMint() returns (uint256)",
-];
-const swapAbi = [
-    {
-        "inputs": [
-            {
-                "components": [
-                    { "internalType": "uint256", "name": "idRequest", "type": "uint256" },
-                    { "internalType": "address", "name": "userA", "type": "address" },
-                    { "internalType": "address", "name": "userB", "type": "address" },
-                    { "internalType": "address", "name": "tokenContract", "type": "address" },
-                    { "internalType": "address", "name": "nftContract", "type": "address" },
-                    { "internalType": "uint256", "name": "tokenAmount", "type": "uint256" },
-                    { "internalType": "uint256", "name": "nftId", "type": "uint256" },
-                    { "internalType": "uint256", "name": "nonceA", "type": "uint256" },
-                    { "internalType": "uint256", "name": "nonceB", "type": "uint256" }
-                ],
-                "internalType": "struct VaultSwap.SwapRequest",
-                "name": "request",
-                "type": "tuple"
-            },
-            { "internalType": "bytes", "name": "signatureA", "type": "bytes" },
-            { "internalType": "bytes", "name": "signatureB", "type": "bytes" }
-        ],
-        "name": "executeSwap",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            { "internalType": "address", "name": "user", "type": "address" }
-        ],
-        "name": "getNonce",
-        "outputs": [
-            { "internalType": "uint256", "name": "", "type": "uint256" }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    }
-];
+const nftAbi = require("../artifacts/contracts/mytokenNFT.sol/MyTokenNFT.json").abi;
+const tokenAbi = require("../artifacts/contracts/tokenYaya.sol/TokenYAYA.json").abi;
+const swapAbi = require("../artifacts/contracts/vaultswap.sol/VaultSwap.json").abi;
+
 
 async function main() {
     const [deployer, bob, relayer] = await ethers.getSigners();
     console.log("Deployer (User A) address:", deployer.address);
     console.log("Bob (User B) address:", bob.address);
     console.log("Relayer (meta-transaction) address:", relayer.address);
+    console.log("Chain ID:", (await ethers.provider.getNetwork()).chainId);
 
     console.log("Deploying contracts...");
 
-    // TokenERC20
-    const tokenYAYA = await ethers.deployContract("TokenYAYA");
+    const TokenYAYA = await ethers.getContractFactory("TokenYAYA");
+    const tokenYAYA = await TokenYAYA.deploy();
     await tokenYAYA.waitForDeployment();
     const tokenAddress = await tokenYAYA.getAddress();
     console.log("TokenYAYA deployed to:", tokenAddress);
-    // TokenNFT
-    const tokenNFT = await ethers.deployContract("MyTokenNFT");
+
+    const MyTokenNFT = await ethers.getContractFactory("MyTokenNFT");
+    const tokenNFT = await MyTokenNFT.deploy();
     await tokenNFT.waitForDeployment();
     const nftAddress = await tokenNFT.getAddress();
-    console.log("TokenNFT deployed to:", nftAddress);
-    // VaultSwap
-    const vaultSwap = await ethers.deployContract("VaultSwap");
+    console.log("MyTokenNFT deployed to:", nftAddress);
+
+    const VaultSwap = await ethers.getContractFactory("VaultSwap");
+    const vaultSwap = await VaultSwap.deploy();
     await vaultSwap.waitForDeployment();
     const swapAddress = await vaultSwap.getAddress();
     console.log("VaultSwap deployed to:", swapAddress);
 
-    //Address of contract
     const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, deployer);
     const nftContract = new ethers.Contract(nftAddress, nftAbi, deployer);
     const swapContract = new ethers.Contract(swapAddress, swapAbi, deployer);
 
-
-    // Mint token vs NFT
     console.log("Minting tokens and NFT...");
     const tokenTx = await tokenContract.mint();
     await tokenTx.wait();
+    console.log("Minted tokens for deployer");
+
     const nftTx = await nftContract.connect(bob).safeMint();
-    const nftReceipt = await nftTx.wait();
-    const nftId = 1
+    await nftTx.wait();
+    const nftId = 1;
+    console.log(`Minted NFT ID ${nftId} for Bob`);
 
+    const userABalanceBefore = await tokenContract.balanceOf(deployer.address);
+    const userBBalanceBefore = await tokenContract.balanceOf(bob.address);
+    const nftOwnerBefore = await nftContract.ownerOf(nftId);
+    const tokenAllowance = await tokenContract.allowance(deployer.address, swapAddress);
+    const nftApproved = await nftContract.getApproved(nftId);
+    console.log(`User A token balance before: ${ethers.formatEther(userABalanceBefore)}`);
+    console.log(`User B token balance before: ${ethers.formatEther(userBBalanceBefore)}`);
+    console.log(`NFT ID ${nftId} owner before: ${nftOwnerBefore}`);
+    console.log(`Token allowance for VaultSwap: ${ethers.formatEther(tokenAllowance)}`);
+    console.log(`NFT approved for: ${nftApproved}`);
 
-    // Approve token and NFT for VaultSwap contract
     console.log("Approving token and NFT...");
-    await tokenContract.approve(swapAddress, ethers.parseEther("1500"));
-    await nftContract.connect(bob).approve(swapAddress, nftId);
-    console.log("Approvals completed");
+    const tokenApproveTx = await tokenContract.approve(swapAddress, ethers.parseEther("1500"));
+    await tokenApproveTx.wait();
+    console.log("Token approved for VaultSwap");
+
+    const nftApproveTx = await nftContract.connect(bob).approve(swapAddress, nftId);
+    await nftApproveTx.wait();
+    console.log("NFT approved for VaultSwap");
+
+    const tokenAllowanceAfter = await tokenContract.allowance(deployer.address, swapAddress);
+    const nftApprovedAfter = await nftContract.getApproved(nftId);
+    console.log(`Token allowance after approve: ${ethers.formatEther(tokenAllowanceAfter)}`);
+    console.log(`NFT approved for after approve: ${nftApprovedAfter}`);
 
     const nonceA = await swapContract.getNonce(deployer.address);
     const nonceB = await swapContract.getNonce(bob.address);
+    console.log(`Nonce A: ${nonceA}, Nonce B: ${nonceB}`);
 
     const swapRequest = {
         idRequest: 1,
@@ -105,8 +82,9 @@ async function main() {
         nftContract: nftAddress,
         tokenAmount: ethers.parseEther("1500"),
         nftId,
-        nonceA: nonceA,
-        nonceB: nonceB,
+        nonceA,
+        nonceB,
+        isExecuted: false,
     };
 
     const domain = {
@@ -130,28 +108,56 @@ async function main() {
         ],
     };
 
+    console.log("Signing SwapRequest...");
+    console.log("SwapRequest:", swapRequest);
     const signatureA = await deployer.signTypedData(domain, types, swapRequest);
     console.log("Signature A:", signatureA);
-
     const signatureB = await bob.signTypedData(domain, types, swapRequest);
     console.log("Signature B:", signatureB);
 
-    console.log("Executing swap...");
-    const tx = await swapContract.connect(relayer).executeSwap(swapRequest, signatureA, signatureB);
-    await tx.wait();
-    console.log("Swap executed successfully!");
+    console.log("Verifying signatures...");
+    const hash = ethers.TypedDataEncoder.hash(domain, types, swapRequest);
+    console.log("EIP-712 Hash:", hash);
+    const recoveredSignerA = ethers.verifyTypedData(domain, types, swapRequest, signatureA);
+    const recoveredSignerB = ethers.verifyTypedData(domain, types, swapRequest, signatureB);
+    console.log(`Recovered Signer A: ${recoveredSignerA}, Expected: ${deployer.address}`);
+    console.log(`Recovered Signer B: ${recoveredSignerB}, Expected: ${bob.address}`);
 
-    const userABalance = await tokenContract.balanceOf(deployer.address);
-    const userBBalance = await tokenContract.balanceOf(bob.address);
-    const nftOwner = await nftContract.ownerOf(nftId);
-    console.log(`User A token balance: ${ethers.formatEther(userABalance)}`);
-    console.log(`User B token balance: ${ethers.formatEther(userBBalance)}`);
-    console.log(`NFT ID ${nftId} owner: ${nftOwner}`);
+    console.log("Executing swap...");
+    const tx = await swapContract.connect(relayer).executeSwap(swapRequest, signatureA, signatureB, {
+        gasLimit: 500000,
+    });
+    await tx.wait();
+    console.log("Swap executed successfully! Transaction hash:", tx.hash);
+
+    console.log("Checking SwapRequest...");
+    try {
+        const swapRequestData = await swapContract.swapRequests(1);
+        console.log("SwapRequest details:", {
+            idRequest: swapRequestData.idRequest.toString(),
+            userA: swapRequestData.userA,
+            userB: swapRequestData.userB,
+            tokenAmount: ethers.formatEther(swapRequestData.tokenAmount),
+            nftId: swapRequestData.nftId.toString(),
+            isExecuted: swapRequestData.isExecuted,
+        });
+    } catch (error) {
+        console.error("Error calling getSwapRequest:", error);
+        throw error;
+    }
+
+
+    const userABalanceAfter = await tokenContract.balanceOf(deployer.address);
+    const userBBalanceAfter = await tokenContract.balanceOf(bob.address);
+    const nftOwnerAfter = await nftContract.ownerOf(nftId);
+    console.log(`User A token balance after: ${ethers.formatEther(userABalanceAfter)}`);
+    console.log(`User B token balance after: ${ethers.formatEther(userBBalanceAfter)}`);
+    console.log(`NFT ID ${nftId} owner after: ${nftOwnerAfter}`);
 }
 
 main()
     .then(() => process.exit(0))
     .catch((error) => {
-        console.error(error);
+        console.error("Error:", error);
         process.exit(1);
     });
