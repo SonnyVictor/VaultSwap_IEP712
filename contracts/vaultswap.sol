@@ -11,22 +11,25 @@ contract VaultSwap is EIP712 {
     string private constant SIGNATURE_VERSION = "1";
 
     struct SwapRequest {
+        uint256 idRequest;
         address userA;
         address userB;
         address tokenContract;
         address nftContract;
         uint256 tokenAmount;
         uint256 nftId;
-        uint256 nonce;
+        uint256 nonceA;
+        uint256 nonceB;
     }
 
     mapping(address => uint256) public nonces;
 
     bytes32 private constant SWAP_REQUEST_TYPEHASH = keccak256(
-        "SwapRequest(address userA,address userB,address tokenContract,address nftContract,uint256 tokenAmount,uint256 nftId,uint256 nonce)"
+        "SwapRequest(uint256 idRequest,address userA,address userB,address tokenContract,address nftContract,uint256 tokenAmount,uint256 nftId,uint256 nonceA,uint256 nonceB)"
     );
 
     event SwapExecuted(
+        uint256 indexed idRequest,
         address indexed userA,
         address indexed userB,
         uint256 tokenAmount,
@@ -40,6 +43,14 @@ contract VaultSwap is EIP712 {
         bytes memory signatureA,
         bytes memory signatureB
     ) external {
+        require(
+            request.nonceA == nonces[request.userA],
+            "Invalid nonce for userA"
+        );
+        require(
+            request.nonceB == nonces[request.userB],
+            "Invalid nonce for userB"
+        );
         require(
             _verifySignature(request, signatureA, request.userA),
             "Invalid signature from User A"
@@ -62,6 +73,7 @@ contract VaultSwap is EIP712 {
         nft.safeTransferFrom(request.userB, request.userA, request.nftId);
 
         emit SwapExecuted(
+            request.idRequest,
             request.userA,
             request.userB,
             request.tokenAmount,
@@ -88,13 +100,15 @@ contract VaultSwap is EIP712 {
             keccak256(
                 abi.encode(
                     SWAP_REQUEST_TYPEHASH,
+                    request.idRequest,
                     request.userA,
                     request.userB,
                     request.tokenContract,
                     request.nftContract,
                     request.tokenAmount,
                     request.nftId,
-                    request.nonce
+                    request.nonceA,
+                    request.nonceB
                 )
             );
     }
