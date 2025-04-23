@@ -19,15 +19,14 @@ const swapContract = new ethers.Contract(swapAddress, swapAbi, relayerWallet);
 
 app.post("/executeSwap", async (req, res) => {
     try {
-        const { swapRequest, signatureA, signatureB, relayerAddress } = req.body;
-        if (!swapRequest || !signatureA || !signatureB || !relayerAddress) {
+        const { swapRequest, signatureA, signatureB } = req.body;
+        if (!swapRequest || !signatureA || !signatureB) {
             return res.status(400).json({ success: false, error: "Missing required fields" });
         }
         const tx = await swapContract.executeSwap(
             swapRequest,
             signatureA,
             signatureB,
-            relayerAddress
         );
         const receipt = await tx.wait();
         res.json({ success: true, txHash: tx.hash, blockNumber: receipt.blockNumber });
