@@ -7,7 +7,7 @@ This project demonstrates a simple use case of **EIP-712 signatures** for meta-t
 
 ---
 
-## 🧪 What This Project Does
+## 🧪 Flow project
 
 The script performs the following actions:
 
